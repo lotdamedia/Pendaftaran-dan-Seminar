@@ -1,0 +1,197 @@
+/**
+ * =================================================================
+ * KODE BACKEND LENGKAP - APLIKASI PENDAFTARAN SEMINAR + PRESENSI + PEMBAYARAN + SERTIFIKAT
+ * PASTIKAN KOLOM DI SPREADSHEET (BARIS 1) SEBAGAI BERIKUT:
+ * A: Waktu Daftar
+ * B: Nama
+ * C: Alamat
+ * D: No HP
+ * E: Instansi
+ * F: Absen Masuk
+ * G: Absen Pulang
+ * H: Pembayaran
+ * =================================================================
+ */
+
+const sheetId = "1kO5KBcGfLwmUX6jg3lCNdqo40Cvr4647nKLM5zZp6d0"; // GANTI DENGAN ID SPREADSHEET ANDA
+const sheetName = "Sheet1";
+
+const TIMEZONE = Session.getScriptTimeZone();
+const DATE_FORMAT = "dd MMMM yyyy, HH:mm:ss";
+
+function doGet(e) {
+  const sheet = SpreadsheetApp.openById(sheetId).getSheetByName(sheetName);
+  
+  // Asumsi konfigurasi tanggal ada di sel J1 (Start) dan K1 (End) 
+  // Jika H1 dan I1 digunakan untuk Pembayaran, maka pindahkan konfigurasi tanggal penutupan ke kolom J & K.
+  // Tapi untuk mencegah error dari kode sebelumnya, saya tetap menggunakan H1 dan I1 untuk tanggal (JIKA sheet Anda diset seperti itu).
+  // Sebaiknya konfigurasi admin (tanggal buka/tutup) diletakkan di sheet berbeda (misal Sheet 'Config').
+  // Di sini saya asumsikan Sheet1 kolom J1 dan K1 untuk config tanggal.
+  
+  let startDate, endDate, displayEnd;
+  try {
+    startDate = new Date(sheet.getRange("J1").getValue()).toISOString();
+    let ed = new Date(sheet.getRange("K1").getValue());
+    ed.setDate(ed.getDate() + 1);
+    endDate = ed.toISOString();
+    displayEnd = sheet.getRange("K1").getDisplayValue();
+  } catch(e) {
+    // Fallback jika J1 K1 kosong
+    startDate = new Date(new Date().setDate(new Date().getDate() - 1)).toISOString();
+    endDate = new Date(new Date().setDate(new Date().getDate() + 7)).toISOString();
+    displayEnd = "TBA";
+  }
+
+  const template = HtmlService.createTemplateFromFile('index');
+  template.dates = { start: startDate, end: endDate, displayEnd: displayEnd };
+  
+  return template.evaluate().setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function saveData(data) {
+  try {
+    const sheet = SpreadsheetApp.openById(sheetId).getSheetByName(sheetName);
+    
+    let originalNoHp = data.noHp.trim();
+    let formattedNoHp = originalNoHp.startsWith('0') ? '62' + originalNoHp.substring(1) : originalNoHp;
+    
+    const dataRange = sheet.getDataRange();
+    const values = dataRange.getDisplayValues();
+    
+    // Cek duplikasi
+    for (let i = 1; i < values.length; i++) {
+      if (values[i][3] == formattedNoHp) {
+        return JSON.stringify({ status: "EXISTS", message: "Nomor HP ini sudah terdaftar." });
+      }
+    }
+
+    const timestamp = Utilities.formatDate(new Date(), TIMEZONE, DATE_FORMAT);
+    // Kolom: [A:Daftar, B:Nama, C:Alamat, D:HP, E:Instansi, F:Masuk, G:Pulang, H:Pembayaran]
+    const newRow = [timestamp, data.nama, data.alamat, formattedNoHp, data.instansi, "", "", "Belum Lunas"];
+    sheet.appendRow(newRow);
+
+    data.noHp = formattedNoHp;
+    data.statusBayar = "Belum Lunas";
+    return JSON.stringify({ status: "SUCCESS", data: data });
+
+  } catch (error) {
+    return JSON.stringify({ status: "ERROR", message: error.toString() });
+  }
+}
+
+/**
+ * Check In & Check Out gabungan
+ * @param {string} phoneNumber 
+ * @param {string} type - 'masuk' atau 'pulang'
+ */
+function checkIn(phoneNumber, type) {
+  try {
+    let originalNoHp = phoneNumber.trim();
+    let formattedNoHp = originalNoHp.startsWith('0') ? '62' + originalNoHp.substring(1) : originalNoHp;
+    
+    const sheet = SpreadsheetApp.openById(sheetId).getSheetByName(sheetName);
+    const phoneColumnRange = sheet.getRange("D2:D" + sheet.getLastRow());
+    
+    const textFinder = phoneColumnRange.createTextFinder(formattedNoHp).matchEntireCell(true);
+    const foundCell = textFinder.findNext();
+
+    if (foundCell) {
+      const row = foundCell.getRow();
+      const rowValues = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+      const participantName = rowValues[1];
+      
+      const colTarget = (type === 'masuk') ? 6 : 7; // Col F atau Col G
+      const existingTime = rowValues[colTarget - 1]; // Array index is col - 1
+
+      if (existingTime === "") {
+        const currentTime = Utilities.formatDate(new Date(), TIMEZONE, DATE_FORMAT);
+        sheet.getRange(row, colTarget).setValue(currentTime);
+        return { status: "SUCCESS", name: participantName, type: type, time: currentTime };
+      } else {
+        return { status: "INFO", name: participantName, type: type, time: existingTime };
+      }
+    } else {
+      return { status: "GAGAL", message: `Nomor HP ${formattedNoHp} tidak terdaftar.` };
+    }
+  } catch (error) {
+    return { status: "ERROR", message: error.toString() };
+  }
+}
+
+function updatePaymentStatus(phoneNumber) {
+  try {
+    const sheet = SpreadsheetApp.openById(sheetId).getSheetByName(sheetName);
+    const textFinder = sheet.getRange("D2:D" + sheet.getLastRow()).createTextFinder(phoneNumber).matchEntireCell(true);
+    const foundCell = textFinder.findNext();
+    
+    if(foundCell) {
+      const row = foundCell.getRow();
+      const currentStatus = sheet.getRange(row, 8).getValue();
+      const name = sheet.getRange(row, 2).getValue();
+      
+      const newStatus = (currentStatus === "Lunas") ? "Belum Lunas" : "Lunas";
+      sheet.getRange(row, 8).setValue(newStatus);
+      
+      return { status: "SUCCESS", name: name, newStatus: newStatus };
+    }
+    return { status: "ERROR", message: "Data tidak ditemukan" };
+  } catch(e) {
+    return { status: "ERROR", message: e.toString() };
+  }
+}
+
+function getParticipants() {
+  try {
+    const sheet = SpreadsheetApp.openById(sheetId).getSheetByName(sheetName);
+    if (sheet.getLastRow() < 2) {
+      return { data: [], summary: { total: 0, hadir: 0, pulang: 0, lunas: 0 } };
+    }
+    
+    // Ambil kolom 1 sampai 8
+    const dataRange = sheet.getRange(2, 1, sheet.getLastRow() - 1, 8);
+    const values = dataRange.getDisplayValues();
+
+    let hadirCount = 0; let pulangCount = 0; let lunasCount = 0;
+
+    values.forEach(row => {
+      if (row[5] !== "") hadirCount++;     // Col F
+      if (row[6] !== "") pulangCount++;    // Col G
+      if (row[7] === "Lunas") lunasCount++;// Col H
+    });
+
+    return {
+      data: values,
+      summary: { total: values.length, hadir: hadirCount, pulang: pulangCount, lunas: lunasCount }
+    };
+  } catch (error) {
+    throw new Error("Gagal mengambil data peserta: " + error.message);
+  }
+}
+
+function getParticipantByPhoneNumber(phoneNumber) {
+  try {
+    let originalPhoneNumber = phoneNumber.trim();
+    let formattedPhoneNumber = originalPhoneNumber.startsWith('0') ? '62' + originalPhoneNumber.substring(1) : originalPhoneNumber;
+
+    const sheet = SpreadsheetApp.openById(sheetId).getSheetByName(sheetName);
+    const dataRange = sheet.getRange(2, 1, Math.max(1, sheet.getLastRow() - 1), 8);
+    const values = dataRange.getDisplayValues();
+
+    for (let i = 0; i < values.length; i++) {
+      if (values[i][3] == formattedPhoneNumber) {
+        return {
+          status: "FOUND",
+          nama: values[i][1],
+          noHp: values[i][3],
+          instansi: values[i][4],
+          waktuMasuk: values[i][5],
+          waktuPulang: values[i][6],
+          statusBayar: values[i][7]
+        };
+      }
+    }
+    return { status: "NOT_FOUND" };
+  } catch (error) {
+    return { status: "ERROR", message: error.toString() };
+  }
+}

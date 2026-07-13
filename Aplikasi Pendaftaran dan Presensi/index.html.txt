@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Manajemen Seminar Premium</title>
+    
+    <!-- Fonts: Inter, Playfair Display (for certificate) & Material Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- SweetAlert2 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+
+    <!-- Configuration for Tailwind -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        serif: ['Playfair Display', 'serif'],
+                    },
+                    colors: {
+                        brand: {
+                            light: '#4ade80',
+                            DEFAULT: '#10b981',
+                            dark: '#059669',
+                        }
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.5s ease-out forwards',
+                        'slide-up': 'slideUp 0.4s ease-out forwards',
+                        'scan-line': 'scanLine 2s linear infinite',
+                    },
+                    keyframes: {
+                        fadeIn: { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
+                        slideUp: { '0%': { opacity: '0', transform: 'translateY(20px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+                        scanLine: { '0%': { top: '0%' }, '50%': { top: '100%' }, '100%': { top: '0%' } }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Google Apps Script Dynamic Data Fallback -->
+    <script>
+        let regDataStr = '{"start":"2023-01-01T00:00:00.000Z","end":"2030-12-31T00:00:00.000Z","displayEnd":"31 Desember 2030"}';
+        try { regDataStr = '<?!= JSON.stringify(dates) ?>'; } catch(e) {}
+        
+        let registrationDates;
+        try {
+            registrationDates = JSON.parse(regDataStr);
+        } catch(e) {
+            registrationDates = {
+                start: new Date(new Date().setDate(new Date().getDate() - 1)).toISOString(),
+                end: new Date(new Date().setDate(new Date().getDate() + 7)).toISOString(),
+                displayEnd: "TBA"
+            };
+        }
+    </script>
+
+    <style>
+        body {
+            background-image: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.95)), url('https://carahebat.github.io/tbsgedung.png');
+            background-size: cover; background-position: center; background-attachment: fixed;
+            color: #f8fafc; min-height: 100vh;
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .input-floating { position: relative; }
+        .input-floating input { border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); transition: all 0.3s ease; }
+        .input-floating input:focus { border-color: #10b981; background: rgba(0, 0, 0, 0.4); box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1); }
+        .input-floating label { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; transition: all 0.2s ease; }
+        .input-floating input:focus ~ label, .input-floating input:not(:placeholder-shown) ~ label {
+            top: -0.5rem; left: 0.75rem; font-size: 0.75rem; background: #1e293b; padding: 0 0.25rem; color: #10b981; border-radius: 4px;
+        }
+
+        #qr-reader { border: none !important; border-radius: 1rem; overflow: hidden; width: 100%; min-height: 250px; }
+        #qr-reader video { object-fit: cover; border-radius: 1rem; width: 100% !important; min-height: 250px !important; }
+        .scanner-line { position: absolute; width: 100%; height: 2px; background: #10b981; box-shadow: 0 0 10px #10b981, 0 0 20px #10b981; z-index: 10; }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        .view-section { display: none; }
+        
+        /* Certificate Print Styles */
+        .cert-bg {
+            background-color: #fff;
+            background-image: 
+                radial-gradient(#e5e7eb 1px, transparent 1px),
+                radial-gradient(#e5e7eb 1px, transparent 1px);
+            background-size: 20px 20px;
+            background-position: 0 0, 10px 10px;
+            border: 15px solid #1e293b;
+            box-shadow: inset 0 0 0 5px #10b981;
+        }
+    </style>
+</head>
+<body class="antialiased overflow-x-hidden flex flex-col">
+
+    <nav class="fixed top-0 w-full z-50 glass-panel border-b-0 border-white/10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex-shrink-0 flex flex-col justify-center">
+                    <span class="text-white font-bold text-lg tracking-wide leading-tight">Seminar Kajian Wanita</span>
+                    <span class="text-brand-light text-xs font-medium">Perempuan Sholihah</span>
+                </div>
+                
+                <div class="hidden md:block">
+                    <div class="ml-10 flex items-baseline space-x-2 lg:space-x-4">
+                        <a href="#" id="nav-daftar" class="text-gray-300 hover:text-white hover:bg-white/10 px-3 py-2 rounded-md text-sm font-medium transition-colors">Daftar</a>
+                        <a href="#" id="nav-cetak" class="text-gray-300 hover:text-white hover:bg-white/10 px-3 py-2 rounded-md text-sm font-medium transition-colors">Cetak Tiket</a>
+                        <a href="#" id="nav-sertifikat" class="text-gray-300 hover:text-white hover:bg-white/10 px-3 py-2 rounded-md text-sm font-medium transition-colors text-yellow-400">Unduh Sertifikat</a>
+                        <button id="admin-login-btn" onclick="openModal('loginModal')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-full text-sm font-medium transition-colors ml-2">Login Admin</button>
+                        <button id="admin-menu-btn" class="hidden bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded-full text-sm font-medium transition-colors ml-2">Menu Admin</button>
+                    </div>
+                </div>
+                
+                <div class="-mr-2 flex md:hidden">
+                    <button type="button" id="mobile-menu-btn" class="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-white/10 focus:outline-none">
+                        <span class="material-icons">menu</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="hidden md:hidden glass-panel border-t border-white/10" id="mobile-menu">
+            <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+                <a href="#" id="nav-daftar-mobile" class="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium">Daftar</a>
+                <a href="#" id="nav-cetak-mobile" class="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium">Cetak Tiket</a>
+                <a href="#" id="nav-sertifikat-mobile" class="text-yellow-400 hover:text-yellow-300 block px-3 py-2 rounded-md text-base font-medium">Unduh Sertifikat</a>
+                <a href="#" id="admin-login-btn-mobile" onclick="openModal('loginModal')" class="text-indigo-400 font-bold block px-3 py-2 rounded-md text-base">Login Admin</a>
+                <a href="#" id="admin-menu-btn-mobile" class="hidden text-brand-light font-bold block px-3 py-2 rounded-md text-base">Menu Admin</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow flex items-center justify-center p-4 pt-24 pb-12 w-full">
+        
+        <!-- VIEW: REGISTRATION -->
+        <div id="registration-view" class="view-section w-full max-w-md animate-fade-in">
+            <div class="glass-panel rounded-2xl p-8">
+                <div class="text-center mb-8">
+                    <img src="https://carahebat.github.io/123.png" alt="Logo" class="h-20 mx-auto mb-4 drop-shadow-lg">
+                    <h1 class="text-2xl font-bold text-white uppercase tracking-wider mb-1">Daftar Kajian</h1>
+                    <div class="h-1 w-16 bg-brand mx-auto rounded-full"></div>
+                </div>
+                
+                <form id="seminar-form" class="space-y-6">
+                    <div class="input-floating">
+                        <input type="text" id="nama" class="w-full px-4 py-3 rounded-lg text-white outline-none" placeholder=" " required>
+                        <label>Nama Lengkap</label>
+                    </div>
+                    <div class="input-floating">
+                        <input type="text" id="alamat" class="w-full px-4 py-3 rounded-lg text-white outline-none" placeholder=" " required>
+                        <label>Alamat</label>
+                    </div>
+                    <div class="input-floating">
+                        <input type="tel" id="noHp" pattern="[0-9]{10,15}" class="w-full px-4 py-3 rounded-lg text-white outline-none" placeholder=" " required>
+                        <label>No. WhatsApp</label>
+                    </div>
+                    <div class="input-floating">
+                        <input type="text" id="instansi" class="w-full px-4 py-3 rounded-lg text-white outline-none" placeholder=" " required>
+                        <label>Instansi / Utusan</label>
+                    </div>
+                    <button type="submit" class="w-full bg-gradient-to-r from-brand to-brand-dark hover:from-brand-light text-white font-bold py-3 px-4 rounded-xl shadow-lg transform transition hover:-translate-y-1">
+                        Daftar Sekarang
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- VIEW: REPRINT TICKET -->
+        <div id="reprint-view" class="view-section w-full max-w-md animate-fade-in">
+            <div class="glass-panel rounded-2xl p-8">
+                <div class="text-center mb-8">
+                    <img src="https://carahebat.github.io/123.png" alt="Logo" class="h-20 mx-auto mb-4 drop-shadow-lg">
+                    <h1 class="text-2xl font-bold text-white uppercase tracking-wider mb-1">Cetak Tiket</h1>
+                    <div class="h-1 w-16 bg-blue-500 mx-auto rounded-full mb-3"></div>
+                </div>
+                <form id="reprint-form" class="space-y-6">
+                    <div class="input-floating">
+                        <input type="tel" id="reprintHp" class="w-full px-4 py-3 rounded-lg text-white outline-none" placeholder=" " required>
+                        <label>No. HP Terdaftar</label>
+                    </div>
+                    <button type="submit" class="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 text-white font-bold py-3 px-4 rounded-xl shadow-lg transform transition hover:-translate-y-1">
+                        Cari Tiket
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- VIEW: DOWNLOAD CERTIFICATE -->
+        <div id="certificate-view" class="view-section w-full max-w-md animate-fade-in">
+            <div class="glass-panel rounded-2xl p-8">
+                <div class="text-center mb-8">
+                    <span class="material-icons text-6xl text-yellow-400 mb-2">workspace_premium</span>
+                    <h1 class="text-2xl font-bold text-white uppercase tracking-wider mb-1">Cetak Sertifikat</h1>
+                    <div class="h-1 w-16 bg-yellow-500 mx-auto rounded-full mb-3"></div>
+                    <p class="text-sm text-gray-400">Sertifikat tersedia bagi peserta yang telah lunas dan hadir.</p>
+                </div>
+                <form id="cert-form" class="space-y-6">
+                    <div class="input-floating">
+                        <input type="tel" id="certHp" class="w-full px-4 py-3 rounded-lg text-white outline-none" placeholder=" " required>
+                        <label>No. HP Terdaftar</label>
+                    </div>
+                    <button type="submit" class="w-full bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg transform transition hover:-translate-y-1">
+                        Generate Sertifikat
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- VIEW: ADMIN MENU -->
+        <div id="admin-view" class="view-section w-full max-w-2xl animate-slide-up">
+            <div class="glass-panel rounded-2xl p-8 md:p-12 text-center">
+                <h2 class="text-3xl font-bold text-white mb-2">Dashboard Admin</h2>
+                <p class="text-gray-400 mb-8">Kelola kehadiran, pembayaran & sertifikat</p>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <button id="btn-scan" class="flex flex-col items-center justify-center gap-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl p-8 transition-all group">
+                        <div class="bg-brand/20 p-4 rounded-full group-hover:scale-110 transition-transform">
+                            <span class="material-icons text-4xl text-brand">qr_code_scanner</span>
+                        </div>
+                        <span class="text-xl font-semibold text-white">Scan Presensi</span>
+                    </button>
+                    
+                    <button id="btn-participants" class="flex flex-col items-center justify-center gap-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl p-8 transition-all group">
+                        <div class="bg-blue-500/20 p-4 rounded-full group-hover:scale-110 transition-transform">
+                            <span class="material-icons text-4xl text-blue-400">admin_panel_settings</span>
+                        </div>
+                        <span class="text-xl font-semibold text-white">Kelola Peserta</span>
+                    </button>
+                </div>
+                
+                <div class="mt-10 pt-6 border-t border-white/10">
+                    <button id="btn-logout" class="text-red-400 hover:text-red-300 font-medium px-6 py-2 rounded-full hover:bg-red-400/10 transition-colors inline-flex items-center gap-2">
+                        <span class="material-icons text-sm">logout</span> Logout
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW: SCANNER -->
+        <div id="scanner-view" class="view-section w-full max-w-xl animate-fade-in">
+            <div class="glass-panel rounded-2xl p-6 md:p-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-white">Scan Presensi</h2>
+                    <button id="btn-back-scanner" class="bg-gray-700 hover:bg-gray-600 p-2 rounded-lg text-white transition-colors">
+                        <span class="material-icons">close</span>
+                    </button>
+                </div>
+
+                <!-- Mode Selector -->
+                <div class="flex bg-black/40 rounded-xl p-1 mb-6 border border-white/10">
+                    <label class="flex-1 text-center cursor-pointer relative">
+                        <input type="radio" name="scanType" value="masuk" class="peer sr-only" checked>
+                        <div class="py-2 px-4 rounded-lg text-sm font-medium text-gray-400 peer-checked:bg-emerald-500 peer-checked:text-white transition-all">Absen Masuk</div>
+                    </label>
+                    <label class="flex-1 text-center cursor-pointer relative">
+                        <input type="radio" name="scanType" value="pulang" class="peer sr-only">
+                        <div class="py-2 px-4 rounded-lg text-sm font-medium text-gray-400 peer-checked:bg-rose-500 peer-checked:text-white transition-all">Absen Pulang</div>
+                    </label>
+                </div>
+                
+                <div class="bg-black/50 rounded-xl p-2 mb-6 shadow-inner border border-white/5">
+                    <div class="overflow-hidden rounded-lg relative bg-gray-900 aspect-square md:aspect-video flex items-center justify-center">
+                        <div id="qr-reader" class="w-full h-full"></div>
+                        <div class="scanner-line animate-scan-line hidden" id="scan-laser"></div>
+                    </div>
+                </div>
+                
+                <div class="flex justify-center">
+                    <button id="btn-switch-camera" class="bg-white/10 hover:bg-white/20 text-white font-medium py-2 px-6 rounded-xl flex items-center gap-2 transition-colors">
+                        <span class="material-icons">switch_camera</span> Ganti Kamera
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW: PARTICIPANTS -->
+        <div id="participants-view" class="view-section w-full max-w-[95%] xl:max-w-7xl animate-fade-in">
+            <div class="glass-panel rounded-2xl p-6">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                    <h2 class="text-2xl font-bold text-white">Kelola Data Peserta</h2>
+                    <button id="btn-back-participants" class="bg-gray-600 hover:bg-gray-500 text-white py-1.5 px-4 rounded-lg transition-colors text-sm flex items-center gap-1">
+                        <span class="material-icons text-sm">arrow_back</span> Dashboard
+                    </button>
+                </div>
+
+                <!-- Stats Cards -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 text-center">
+                        <h5 class="text-blue-300 text-xs font-medium mb-1">Total Peserta</h5>
+                        <h3 class="text-2xl font-bold text-white" id="summary-total">0</h3>
+                    </div>
+                    <div class="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 text-center">
+                        <h5 class="text-emerald-300 text-xs font-medium mb-1">Sudah Hadir</h5>
+                        <h3 class="text-2xl font-bold text-white" id="summary-hadir">0</h3>
+                    </div>
+                    <div class="bg-rose-500/10 border border-rose-500/20 rounded-xl p-4 text-center">
+                        <h5 class="text-rose-300 text-xs font-medium mb-1">Sudah Pulang</h5>
+                        <h3 class="text-2xl font-bold text-white" id="summary-pulang">0</h3>
+                    </div>
+                    <div class="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 text-center">
+                        <h5 class="text-yellow-300 text-xs font-medium mb-1">Total Lunas</h5>
+                        <h3 class="text-2xl font-bold text-white" id="summary-lunas">0</h3>
+                    </div>
+                </div>
+
+                <!-- Filters & Controls -->
+                <div class="bg-black/20 rounded-xl p-4 mb-6 border border-white/5 flex flex-wrap gap-4 items-center">
+                    <div class="relative flex-1 min-w-[200px]">
+                        <span class="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">search</span>
+                        <input type="text" id="searchInput" class="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-brand" placeholder="Cari nama, instansi...">
+                    </div>
+                    
+                    <div class="flex gap-2 min-w-[200px]">
+                        <input type="tel" id="manualPhoneInput" class="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white" placeholder="Input No HP manual">
+                        <select id="manualTypeInput" class="bg-white/5 border border-white/10 rounded-lg px-2 text-sm text-white outline-none">
+                            <option value="masuk" class="text-black">Masuk</option>
+                            <option value="pulang" class="text-black">Pulang</option>
+                        </select>
+                        <button id="manualCheckInBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg text-sm font-medium">Add</button>
+                    </div>
+                </div>
+
+                <!-- Table -->
+                <div class="overflow-x-auto rounded-xl border border-white/10 bg-black/20">
+                    <div id="participants-list" class="min-w-full">
+                        <div class="p-8 text-center text-gray-400 flex flex-col items-center">
+                            <span class="material-icons animate-spin text-3xl mb-2 text-brand">sync</span>
+                            Memuat data...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- MODAL: LOGIN -->
+    <div id="loginModal" class="fixed inset-0 z-[100] hidden flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div class="glass-panel w-full max-w-sm rounded-2xl p-6 shadow-2xl relative animate-slide-up border border-indigo-500/30">
+            <button onclick="closeModal('loginModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+                <span class="material-icons">close</span>
+            </button>
+            <div class="text-center mb-6 mt-2">
+                <h3 class="text-xl font-bold text-white">Akses Admin</h3>
+            </div>
+            <div class="space-y-4">
+                <div class="input-floating">
+                    <input type="password" id="passkey" class="w-full px-4 py-3 rounded-lg text-white outline-none" placeholder=" ">
+                    <label>Passkey Rahasia</label>
+                </div>
+                <button id="login-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-transform hover:-translate-y-0.5">Masuk</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: BUKTI TIKET -->
+    <div id="proofModal" class="fixed inset-0 z-[100] hidden flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+        <div class="bg-white w-full max-w-md rounded-2xl p-1 shadow-2xl relative animate-slide-up text-gray-800">
+            <div id="loading-spinner" class="p-12 text-center flex flex-col items-center justify-center">
+                <div class="w-12 h-12 border-4 border-gray-200 border-t-brand rounded-full animate-spin mb-4"></div>
+                <p class="text-gray-600 font-medium">Memproses Data...</p>
+            </div>
+
+            <div id="proof-content" class="hidden">
+                <div class="p-6 pb-0" id="bukti-pendaftaran">
+                    <div class="text-center mb-4">
+                        <h4 class="text-xl font-bold text-gray-900" id="proof-title">Tiket Pendaftaran</h4>
+                        <p class="text-sm text-gray-500" id="proof-subtitle">Tunjukkan QR Code ini saat registrasi ulang.</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-xl p-4 border border-gray-100 mb-4">
+                        <table class="w-full text-sm">
+                            <tr><td class="text-gray-500 py-1 w-1/3">Nama</td><td class="font-bold text-gray-900" id="popup-nama"></td></tr>
+                            <tr><td class="text-gray-500 py-1">No. HP</td><td class="font-bold text-gray-900" id="popup-noHp"></td></tr>
+                            <tr><td class="text-gray-500 py-1">Instansi</td><td class="font-bold text-gray-900" id="popup-instansi"></td></tr>
+                            <tr><td class="text-gray-500 py-1">Status Bayar</td><td class="font-bold text-gray-900" id="popup-bayar"></td></tr>
+                        </table>
+                    </div>
+                    <div class="flex justify-center p-2 bg-white rounded-xl mb-4 border-2 border-dashed border-gray-200">
+                        <div id="qrcode-container"></div>
+                    </div>
+                </div>
+                
+                <div class="p-4 flex gap-3 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
+                    <button onclick="closeModal('proofModal')" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2.5 px-4 rounded-xl transition-colors">Tutup</button>
+                    <button onclick="cetakPDF()" class="flex-1 bg-brand hover:bg-brand-dark text-white font-semibold py-2.5 px-4 rounded-xl flex justify-center items-center gap-2">
+                        <span class="material-icons text-sm">download</span> Simpan PDF
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- HIDDEN CERTIFICATE TEMPLATE FOR PDF GENERATION -->
+    <div id="certificate-template" class="fixed top-0 left-[-9999px] z-[-1] opacity-0 pointer-events-none">
+        <div id="cert-canvas" class="cert-bg w-[1123px] h-[794px] flex flex-col items-center justify-center p-16 relative text-center">
+            <!-- Decorative Corners -->
+            <div class="absolute top-8 left-8 w-16 h-16 border-t-4 border-l-4 border-yellow-500"></div>
+            <div class="absolute top-8 right-8 w-16 h-16 border-t-4 border-r-4 border-yellow-500"></div>
+            <div class="absolute bottom-8 left-8 w-16 h-16 border-b-4 border-l-4 border-yellow-500"></div>
+            <div class="absolute bottom-8 right-8 w-16 h-16 border-b-4 border-r-4 border-yellow-500"></div>
+            
+            <h3 class="text-xl font-bold text-gray-500 uppercase tracking-[0.3em] mb-4">Sertifikat Penghargaan</h3>
+            <h1 class="text-6xl font-serif text-gray-900 mb-8 font-bold text-center leading-tight">Diberikan Kepada</h1>
+            
+            <h2 id="cert-name" class="text-5xl font-serif italic text-yellow-600 mb-6 border-b-2 border-gray-300 pb-2 min-w-[500px] text-center">
+                Nama Peserta
+            </h2>
+            
+            <p class="text-xl text-gray-700 max-w-3xl leading-relaxed mb-16">
+                Atas partisipasi dan kehadirannya sebagai <b class="text-gray-900">PESERTA</b> dalam acara<br>
+                <span class="font-bold text-2xl text-gray-900 mt-2 block">Seminar Kajian Wanita: Perempuan Sholihah</span>
+                yang diselenggarakan dengan sukses dan lancar.
+            </p>
+            
+            <div class="flex justify-between w-full max-w-2xl mt-8">
+                <div class="text-center">
+                    <div class="w-48 h-px bg-gray-400 mb-2 mt-16"></div>
+                    <p class="font-bold text-gray-800">Ketua Panitia</p>
+                </div>
+                <div class="text-center relative">
+                    <div class="absolute -top-16 left-1/2 -translate-x-1/2 opacity-20 transform -rotate-12">
+                        <span class="material-icons text-8xl text-red-600">verified</span>
+                    </div>
+                    <div class="w-48 h-px bg-gray-400 mb-2 mt-16"></div>
+                    <p class="font-bold text-gray-800">Pemateri Seminar</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <script>
+        const adminPasskey = "admin123";
+        let html5QrCode;
+        let currentFacingMode = "environment";
+        let allParticipantsData = [];
+
+        // Mock System for testing UI without backend
+        if (typeof google === 'undefined') {
+            console.warn("MOCK BACKEND AKTIF.");
+            const createRunner = () => {
+                let successCb = null; let failureCb = null;
+                return {
+                    withSuccessHandler: function(cb) { successCb = cb; return this; },
+                    withFailureHandler: function(cb) { failureCb = cb; return this; },
+                    saveData: function(data) {
+                        setTimeout(() => successCb(JSON.stringify({ status: "SUCCESS", data: {...data, statusBayar: "Belum Lunas"} })), 1000);
+                    },
+                    getParticipantByPhoneNumber: function(phone) {
+                        setTimeout(() => successCb({ status: "FOUND", nama: "Demo User", noHp: phone, instansi: "Instansi Demo", statusBayar: "Lunas", waktuMasuk: "08:00", waktuPulang: "15:00" }), 1000);
+                    },
+                    checkIn: function(phone, type) {
+                        setTimeout(() => successCb({ status: "SUCCESS", name: "Demo User", type: type }), 1000);
+                    },
+                    updatePaymentStatus: function(phone) {
+                        setTimeout(() => successCb({ status: "SUCCESS", name: "Demo User", newStatus: "Lunas" }), 1000);
+                    },
+                    getParticipants: function() {
+                        setTimeout(() => successCb({
+                            data: [
+                                ["13 Jul 2026", "Faisal Rohman", "Jkt", "0811", "PT A", "08:00", "15:00", "Lunas"],
+                                ["13 Jul 2026", "Aisyah", "Bdg", "0822", "PT B", "08:15", "", "Belum Lunas"]
+                            ],
+                            summary: { total: 2, hadir: 2, pulang: 1, lunas: 1 }
+                        }), 1000);
+                    }
+                };
+            };
+            window.google = { script: { get run() { return createRunner(); } } };
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            setupNavigation();
+            
+            if (sessionStorage.getItem('isAdminLoggedIn') === 'true') {
+                setAdminView(true); showView('admin-view');
+            } else {
+                showView('registration-view'); // Default view
+            }
+        });
+
+        function setupNavigation() {
+            const addNav = (id, viewId) => {
+                document.querySelectorAll(`#${id}`).forEach(el => el.addEventListener('click', (e) => {
+                    e.preventDefault(); document.getElementById('mobile-menu').classList.add('hidden'); showView(viewId);
+                }));
+            };
+
+            addNav('nav-daftar', 'registration-view'); addNav('nav-daftar-mobile', 'registration-view');
+            addNav('nav-cetak', 'reprint-view'); addNav('nav-cetak-mobile', 'reprint-view');
+            addNav('nav-sertifikat', 'certificate-view'); addNav('nav-sertifikat-mobile', 'certificate-view');
+            addNav('admin-menu-btn', 'admin-view'); addNav('admin-menu-btn-mobile', 'admin-view');
+
+            document.getElementById('mobile-menu-btn').addEventListener('click', () => document.getElementById('mobile-menu').classList.toggle('hidden'));
+            
+            // Buttons
+            document.getElementById('login-btn').addEventListener('click', handleLogin);
+            document.getElementById('btn-scan').addEventListener('click', () => showView('scanner-view'));
+            document.getElementById('btn-participants').addEventListener('click', () => showView('participants-view'));
+            document.getElementById('btn-logout').addEventListener('click', () => { sessionStorage.removeItem('isAdminLoggedIn'); setAdminView(false); showView('registration-view'); });
+            document.getElementById('btn-back-scanner').addEventListener('click', () => showView('admin-view'));
+            document.getElementById('btn-back-participants').addEventListener('click', () => showView('admin-view'));
+            
+            // Forms & Actions
+            document.getElementById('seminar-form').addEventListener('submit', handleRegistration);
+            document.getElementById('reprint-form').addEventListener('submit', handleReprint);
+            document.getElementById('cert-form').addEventListener('submit', handleCertificate);
+            document.getElementById('btn-switch-camera').addEventListener('click', switchCamera);
+            document.getElementById('searchInput').addEventListener('keyup', () => renderTable(allParticipantsData));
+            document.getElementById('manualCheckInBtn').addEventListener('click', handleManualCheckIn);
+        }
+
+        function showView(viewId) {
+            document.querySelectorAll('.view-section').forEach(v => v.style.display = 'none');
+            const v = document.getElementById(viewId);
+            if(v) {
+                v.style.display = 'block';
+                v.classList.remove('animate-fade-in', 'animate-slide-up');
+                void v.offsetWidth; v.classList.add('animate-fade-in');
+            }
+            
+            // Hentikan scanner dengan aman jika admin pindah ke menu lain
+            if (html5QrCode && html5QrCode.isScanning && viewId !== 'scanner-view') {
+                html5QrCode.stop().then(() => { html5QrCode.clear(); }).catch(e => {}); 
+                document.getElementById('scan-laser').classList.add('hidden');
+            }
+            
+            if (viewId === 'scanner-view') {
+                // Berikan jeda waktu 300ms agar DOM & Animasi ter-render dulu sebelum kamera nyala
+                setTimeout(() => { startScanner(); }, 300);
+            }
+            if (viewId === 'participants-view') loadParticipants();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+        function setAdminView(isAdmin) {
+            document.querySelectorAll('#admin-login-btn, #admin-login-btn-mobile').forEach(e => e.classList.toggle('hidden', isAdmin));
+            document.querySelectorAll('#admin-menu-btn, #admin-menu-btn-mobile').forEach(e => e.classList.toggle('hidden', !isAdmin));
+        }
+
+        function handleLogin() {
+            if (document.getElementById('passkey').value === adminPasskey) {
+                sessionStorage.setItem('isAdminLoggedIn', 'true'); setAdminView(true); closeModal('loginModal');
+                document.getElementById('passkey').value = ''; showView('admin-view');
+            } else {
+                Swal.fire({icon: 'error', title: 'Akses Ditolak', text: 'Passkey salah!', background: '#1e293b', color: '#fff'});
+            }
+        }
+
+            function startScanner() {
+            document.getElementById('scan-laser').classList.remove('hidden');
+            
+            // Inisialisasi HTML5QRcode jika belum ada
+            if (!html5QrCode) {
+                html5QrCode = new Html5Qrcode("qr-reader");
+            }
+            
+            // Attempt 1: Coba jalankan dengan mode kamera saat ini (Default: Kamera Belakang)
+            html5QrCode.start(
+                { facingMode: currentFacingMode }, 
+                { fps: 10, qrbox: { width: 250, height: 250 } }, 
+                onScanSuccess
+            ).catch(err => { 
+                console.warn("Attempt 1 Failed (" + currentFacingMode + "):", err);
+                
+                // Fallback: Jika pengguna memakai Laptop/PC yang tidak punya kamera belakang
+                if (currentFacingMode === "environment") {
+                    console.log("Mencoba fallback ke kamera depan (user)...");
+                    currentFacingMode = "user"; // Ubah prioritas ke kamera depan
+                    
+                    html5QrCode.start(
+                        { facingMode: "user" }, 
+                        { fps: 10, qrbox: { width: 250, height: 250 } }, 
+                        onScanSuccess
+                    ).catch(err2 => showCameraError(err2));
+                } else {
+                    showCameraError(err);
+                }
+            });
+        }
+
+        function showCameraError(errorObj) {
+            document.getElementById('scan-laser').classList.add('hidden'); 
+            
+            // Ekstrak nama error sistem
+            let errorDetails = errorObj.name || errorObj.message || errorObj;
+            let saran = "Pastikan izin kamera diberikan di pengaturan browser.";
+            
+            // Analisa penyebab error
+            if (String(errorDetails).includes("NotAllowedError")) saran = "Izin kamera diblokir. Klik ikon gembok di sebelah URL dan ubah izin kamera menjadi 'Allow/Izinkan'.";
+            if (String(errorDetails).includes("NotReadableError")) saran = "Kamera tidak bisa dibaca. Pastikan kamera tidak sedang dipakai oleh aplikasi lain (seperti Zoom atau Google Meet).";
+            if (String(errorDetails).includes("NotFoundError")) saran = "Tidak ada satupun kamera hardware yang terdeteksi di perangkat Anda.";
+
+            Swal.fire({
+                icon: 'error', 
+                title: 'Gagal Membuka Kamera', 
+                html: `<p class="text-sm text-gray-300 mb-3">${saran}</p>
+                       <p class="text-xs text-rose-400 bg-rose-500/10 p-2 rounded border border-rose-500/20 text-left font-mono">Log sistem: ${errorDetails}</p>`, 
+                background: '#1e293b', 
+                color: '#fff'
+            });
+        }
+        function switchCamera() {
+            if (html5QrCode && html5QrCode.isScanning) {
+                html5QrCode.stop().then(() => { 
+                    currentFacingMode = currentFacingMode === "environment" ? "user" : "environment"; 
+                    startScanner(); 
+                }).catch(err => console.warn(err));
+            }
+        }
+        function onScanSuccess(decodedText) {
+            if (html5QrCode && html5QrCode.isScanning) { 
+                html5QrCode.stop().then(() => html5QrCode.clear()).catch(e=>{}); 
+                document.getElementById('scan-laser').classList.add('hidden'); 
+            }
+            const type = document.querySelector('input[name="scanType"]:checked').value;
+            Swal.fire({title: 'Memproses...', text: `Scan ${type}...`, background: '#1e293b', color: '#fff', didOpen: () => Swal.showLoading()});
+            google.script.run.withSuccessHandler(onCheckInSuccess).checkIn(decodedText, type);
+        }
+        function handleManualCheckIn() {
+            const phone = document.getElementById('manualPhoneInput').value;
+            const type = document.getElementById('manualTypeInput').value;
+            if(!phone) return Swal.fire({icon: 'warning', title: 'Input Kosong', text: 'Masukkan No HP', background: '#1e293b', color: '#fff'});
+            Swal.fire({title: 'Memproses...', text: `Manual ${type}...`, background: '#1e293b', color: '#fff', didOpen: () => Swal.showLoading()});
+            google.script.run.withSuccessHandler((res) => { onCheckInSuccess(res); loadParticipants(); }).checkIn(phone, type);
+        }
+        function onCheckInSuccess(res) {
+            if (res.status === "SUCCESS") Swal.fire({icon: 'success', title: `Berhasil Absen ${res.type}`, text: res.name, background: '#1e293b', color: '#fff'});
+            else if (res.status === "INFO") Swal.fire({icon: 'info', title: `Sudah Absen`, text: `${res.name} sudah absen ${res.type}`, background: '#1e293b', color: '#fff'});
+            else Swal.fire({icon: 'error', title: 'Gagal', text: res.message, background: '#1e293b', color: '#fff'});
+            
+            setTimeout(() => { if (document.getElementById('scanner-view').style.display === 'block') startScanner(); }, 2000);
+        }
+
+        function handleRegistration(e) {
+            e.preventDefault();
+            const data = { nama: document.getElementById('nama').value, alamat: document.getElementById('alamat').value, noHp: document.getElementById('noHp').value, instansi: document.getElementById('instansi').value };
+            showProofPopup(true);
+            google.script.run.withSuccessHandler(res => {
+                const result = JSON.parse(res);
+                if (result.status === "SUCCESS") { displayProof(result.data, false); document.getElementById('seminar-form').reset(); }
+                else { closeModal('proofModal'); Swal.fire({icon: 'error', title: 'Gagal', text: result.message, background: '#1e293b', color: '#fff'}); }
+            }).saveData(data);
+        }
+
+        function handleReprint(e) {
+            e.preventDefault(); showProofPopup(true);
+            google.script.run.withSuccessHandler(res => {
+                if (res.status === "FOUND") { displayProof(res, true); document.getElementById('reprint-form').reset(); }
+                else { closeModal('proofModal'); Swal.fire({icon: 'warning', title: 'Tidak Ditemukan', text: 'No HP tidak terdaftar.', background: '#1e293b', color: '#fff'}); }
+            }).getParticipantByPhoneNumber(document.getElementById('reprintHp').value);
+        }
+
+        function handleCertificate(e) {
+            e.preventDefault();
+            const phone = document.getElementById('certHp').value;
+            Swal.fire({title: 'Memvalidasi Data...', background: '#1e293b', color: '#fff', didOpen: () => Swal.showLoading()});
+            
+            google.script.run.withSuccessHandler(res => {
+                if (res.status === "FOUND") {
+                    if (res.waktuMasuk === "" || res.statusBayar !== "Lunas") {
+                        Swal.fire({icon: 'warning', title: 'Sertifikat Terkunci', text: 'Sertifikat hanya untuk peserta yang telah Lunas & Hadir.', background: '#1e293b', color: '#fff'});
+                    } else {
+                        generateSertifikatPDF(res.nama);
+                    }
+                } else {
+                    Swal.fire({icon: 'warning', title: 'Tidak Ditemukan', text: 'Nomor HP tidak terdaftar.', background: '#1e293b', color: '#fff'});
+                }
+            }).getParticipantByPhoneNumber(phone);
+        }
+
+        function showProofPopup(loading) {
+            openModal('proofModal');
+            document.getElementById('loading-spinner').style.display = loading ? 'flex' : 'none';
+            document.getElementById('proof-content').classList.toggle('hidden', loading);
+        }
+
+        function displayProof(data, isReprint) {
+            document.getElementById('proof-title').textContent = isReprint ? "Salinan Tiket" : "Pendaftaran Berhasil";
+            document.getElementById('popup-nama').textContent = data.nama;
+            document.getElementById('popup-noHp').textContent = data.noHp;
+            document.getElementById('popup-instansi').textContent = data.instansi;
+            document.getElementById('popup-bayar').innerHTML = data.statusBayar === "Lunas" 
+                ? '<span class="text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded">Lunas</span>' 
+                : '<span class="text-rose-600 bg-rose-100 px-2 py-0.5 rounded">Belum Lunas</span>';
+            
+            const qr = document.getElementById('qrcode-container'); qr.innerHTML = '';
+            new QRCode(qr, { text: data.noHp, width: 180, height: 180, colorDark: "#0f172a", colorLight: "#ffffff" });
+            showProofPopup(false);
+        }
+
+        async function cetakPDF() {
+            const { jsPDF } = window.jspdf;
+            const content = document.getElementById('bukti-pendaftaran');
+            content.style.background = 'white'; content.style.padding = '20px';
+            const canvas = await html2canvas(content, { scale: 2 });
+            content.style.background = ''; content.style.padding = '';
+            
+            const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a5' });
+            pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, pdf.internal.pageSize.getWidth(), (canvas.height * pdf.internal.pageSize.getWidth()) / canvas.width);
+            pdf.save(`Tiket-${document.getElementById('popup-nama').textContent}.pdf`);
+        }
+
+        async function generateSertifikatPDF(nama) {
+            Swal.fire({title: 'Membuat Sertifikat...', text: 'Mohon tunggu', background: '#1e293b', color: '#fff', didOpen: () => Swal.showLoading()});
+            
+            document.getElementById('cert-name').textContent = nama;
+            const certNode = document.getElementById('cert-canvas');
+            
+            // Show temporarily for html2canvas to read
+            const container = document.getElementById('certificate-template');
+            container.style.opacity = '1'; container.style.zIndex = '9999'; container.style.left = '0';
+            
+            try {
+                const canvas = await html2canvas(certNode, { scale: 2, useCORS: true });
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+                
+                pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, 297, 210);
+                pdf.save(`Sertifikat_${nama.replace(/\s+/g, '_')}.pdf`);
+                Swal.fire({icon: 'success', title: 'Berhasil', text: 'Sertifikat diunduh!', background: '#1e293b', color: '#fff'});
+            } catch (err) {
+                Swal.fire({icon: 'error', title: 'Gagal', text: 'Gagal merender sertifikat.', background: '#1e293b', color: '#fff'});
+            } finally {
+                container.style.opacity = '0'; container.style.zIndex = '-1'; container.style.left = '-9999px';
+            }
+        }
+
+        function loadParticipants() {
+            document.getElementById('participants-list').innerHTML = '<div class="p-8 text-center text-gray-400"><span class="material-icons animate-spin">sync</span></div>';
+            google.script.run.withSuccessHandler(res => {
+                allParticipantsData = res.data;
+                document.getElementById('summary-total').textContent = res.summary.total;
+                document.getElementById('summary-hadir').textContent = res.summary.hadir;
+                document.getElementById('summary-pulang').textContent = res.summary.pulang;
+                document.getElementById('summary-lunas').textContent = res.summary.lunas;
+                renderTable(allParticipantsData);
+            }).getParticipants();
+        }
+
+        function togglePayment(phone) {
+            Swal.fire({title: 'Update Pembayaran...', background: '#1e293b', color: '#fff', didOpen: () => Swal.showLoading()});
+            google.script.run.withSuccessHandler(res => {
+                if(res.status === "SUCCESS") {
+                    const Toast = Swal.mixin({toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, background: '#1e293b', color: '#fff'});
+                    Toast.fire({icon: 'success', title: `${res.name} kini ${res.newStatus}`});
+                    loadParticipants(); // refresh
+                }
+            }).updatePaymentStatus(phone);
+        }
+
+        function renderTable(data) {
+            const list = document.getElementById('participants-list');
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            
+            let filtered = data;
+            if (search) filtered = data.filter(r => r[1].toLowerCase().includes(search) || r[3].toLowerCase().includes(search));
+            
+            if (filtered.length === 0) return list.innerHTML = '<div class="p-8 text-center text-gray-400">Tidak ada data.</div>';
+            
+            let html = `<table class="w-full text-sm text-left text-gray-300">
+                <thead class="text-xs text-gray-400 uppercase bg-gray-800/50">
+                    <tr><th class="px-4 py-3">Nama & Kontak</th><th class="px-4 py-3">Instansi</th><th class="px-4 py-3 text-center">Masuk</th><th class="px-4 py-3 text-center">Pulang</th><th class="px-4 py-3 text-center">Pembayaran</th></tr>
+                </thead><tbody class="divide-y divide-white/5">`;
+                
+            filtered.forEach(row => {
+                const [waktu, nama, alamat, hp, instansi, masuk, pulang, bayar] = row;
+                
+                const badgeMasuk = masuk ? `<span class="bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded text-xs">${masuk.split(' ')[1] || 'Hadir'}</span>` : '-';
+                const badgePulang = pulang ? `<span class="bg-blue-500/20 text-blue-400 px-2 py-1 rounded text-xs">${pulang.split(' ')[1] || 'Pulang'}</span>` : '-';
+                
+                const isLunas = bayar === 'Lunas';
+                const btnBayar = `<button onclick="togglePayment('${hp}')" class="px-3 py-1 rounded-full text-xs font-bold transition-colors ${isLunas ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-rose-600 hover:bg-rose-500 text-white'}">${isLunas ? 'LUNAS' : 'BELUM'}</button>`;
+                
+                html += `<tr class="hover:bg-white/5 transition-colors">
+                    <td class="px-4 py-3"><div class="font-medium text-white">${nama}</div><div class="text-xs text-gray-500">${hp}</div></td>
+                    <td class="px-4 py-3">${instansi}</td>
+                    <td class="px-4 py-3 text-center">${badgeMasuk}</td>
+                    <td class="px-4 py-3 text-center">${badgePulang}</td>
+                    <td class="px-4 py-3 text-center">${btnBayar}</td>
+                </tr>`;
+            });
+            list.innerHTML = html + `</tbody></table>`;
+        }
+    </script>
+</body>
+</html>
